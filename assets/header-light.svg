@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="170" viewBox="0 0 880 170" role="img" aria-label="Aarav Mahajan - finance, technology, mathematics">
+  <style>
+    text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .n{font-size:44px;font-weight:700;fill:#111111;letter-spacing:-1px}
+    .s{font-size:16px;fill:#6b6b6b}
+    .p{font-size:16px;fill:#6b6b6b}
+    .c{fill:#111111;animation:b 1.1s steps(1) infinite}
+    @keyframes b{50%{opacity:0}}
+  </style>
+  <rect width="880" height="170" rx="10" fill="#fafafa"/>
+  <rect x="0.5" y="0.5" width="879" height="169" rx="9.5" fill="none" stroke="#dcdcdc"/>
+  <text class="p" x="36" y="50">~/kadoo69 $ whoami</text>
+  <text class="n" x="36" y="102">aarav mahajan</text>
+  <rect class="c" x="404" y="70" width="22" height="38"/>
+  <text class="s" x="36" y="138">finance / technology / mathematics</text>
+</svg>
