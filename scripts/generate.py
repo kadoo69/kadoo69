@@ -4,10 +4,12 @@ Standard library only. Reads GITHUB_TOKEN from the environment, or falls back to
 Usage: python3 scripts/generate.py [login]
 """
 import datetime as dt
+import hashlib
 import html
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import urllib.request
@@ -249,11 +251,20 @@ text{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",m
 def main():
     since, total, weeks = fetch()
     os.makedirs(OUT, exist_ok=True)
+    digest = hashlib.sha256()
     for theme in PALETTES:
+        svg = render(theme, since, total, weeks) + "\n"
+        digest.update(svg.encode())
         path = os.path.join(OUT, f"card-{theme}.svg")
         with open(path, "w") as f:
-            f.write(render(theme, since, total, weeks) + "\n")
+            f.write(svg)
         print("wrote", os.path.normpath(path))
+    # GitHub's image CDN caches by URL, so version the README links by content hash.
+    readme = os.path.join(os.path.dirname(__file__), "..", "README.md")
+    text = open(readme).read()
+    text = re.sub(r"(assets/card-(?:dark|light)\.svg)(\?v=[0-9a-f]+)?", rf"\1?v={digest.hexdigest()[:10]}", text)
+    with open(readme, "w") as f:
+        f.write(text)
 
 
 if __name__ == "__main__":
