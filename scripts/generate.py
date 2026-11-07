@@ -28,7 +28,7 @@ FIELDS = [
 PALETTES = {
     "dark": dict(bg="#0b0d10", border="#21262d", text="#e6edf3", dim="#7d8590", accent="#3fb950", glow="#7ee787", blur=1.6,
                  chrome="#30363d", off="#161b22", heat=["#161b22", "#0e4429", "#006d32", "#26a641", "#39d353"]),
-    "light": dict(bg="#fbfbfb", border="#d8dee4", text="#1f2328", dim="#6e7781", accent="#1a7f37", glow="#2da44e", blur=0.0001,
+    "light": dict(bg="#fbfbfb", border="#d8dee4", text="#1f2328", dim="#6e7781", accent="#1a7f37", glow="#2da44e", blur=0.6,
                   chrome="#d0d7de", off="#eaeef2", heat=["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]),
 }
 
@@ -36,53 +36,104 @@ LEVELS = {"NONE": 0, "FIRST_QUARTILE": 1, "SECOND_QUARTILE": 2, "THIRD_QUARTILE"
 CW = 8.4  # monospace advance at 14px, used only for sizing typed clips
 
 
-def vol(x, y, phase=0.0):
-    """Toy implied-vol surface with a travelling ripple.
-
-    x: log-moneyness in [-1, 1]. y: maturity in [-1, 1], short to long. phase: ripple phase in radians.
-    """
-    t = (y + 1) / 2
-    base = 0.75 * x * x * math.exp(-1.4 * t) - 0.28 * x * math.exp(-1.0 * t) + 0.22 * t - 0.30
-    return base + 0.055 * math.sin(2.4 * x + 3.4 * y - phase) * (0.6 + 0.4 * (1 - t))
+def _raw_loss(x, y):
+    bowl = 0.42 * (x * x + y * y)
+    well = 0.80 * math.exp(-((x - 0.32) ** 2 + (y + 0.22) ** 2) / 0.10)
+    trap = 0.38 * math.exp(-((x + 0.48) ** 2 + (y - 0.42) ** 2) / 0.06)
+    texture = 0.05 * math.sin(4.2 * x) * math.cos(3.6 * y)
+    return bowl - well - trap + texture
 
 
-def surface_anim(box, n=48, lines=13, samples=20, tilt=0.6, dist=3.6, ripples=2, floor=-0.62):
-    """Keyframes for one full turn of the surface, fitted into box = (x0, y0, x1, y1).
+_GRID = [_raw_loss(-1 + i / 30, -1 + j / 30) for i in range(61) for j in range(61)]
+_LO, _HI = min(_GRID), max(_GRID)
 
-    Every keyframe keeps the same path structure, so SMIL can interpolate between them smoothly.
-    Returns dict: mesh [(d_keys, opacity_keys)], floor d_keys, labels {name: xy_keys}, dot xy_keys.
+
+def loss(x, y):
+    """Toy loss landscape on [-1, 1]^2, scaled to height [-0.42, 0.48]: a deep global basin and a shallow trap."""
+    return (_raw_loss(x, y) - _LO) / (_HI - _LO) * 0.9 - 0.42
+
+
+def descent(x, y, lr=0.012, beta=0.9, steps=110):
+    """Heavy-ball gradient descent on loss(). Deterministic; returns the list of (x, y) iterates."""
+    vx = vy = 0.0
+    path = [(x, y)]
+    for _ in range(steps):
+        h = 1e-4
+        gx = (loss(x + h, y) - loss(x - h, y)) / (2 * h)
+        gy = (loss(x, y + h) - loss(x, y - h)) / (2 * h)
+        vx, vy = beta * vx - lr * gx, beta * vy - lr * gy
+        x, y = max(-1.0, min(1.0, x + vx)), max(-1.0, min(1.0, y + vy))
+        path.append((x, y))
+    return path
+
+
+# Same start, two optimizers: momentum escapes the trap and finds the global minimum, plain GD gets stuck.
+RUNS = [("momentum", (-0.9, 0.85), 0.012, 0.94), ("sgd", (-0.9, 0.85), 0.012, 0.0)]
+DESCENT = (0.04, 0.62)  # loop fractions where the balls roll
+FADE = "0;1;1;0;0", "0;0.04;0.9;0.98;1"  # values, keyTimes for trail and ball opacity
+
+
+def scene_anim(box, n=48, k=100, lines=13, samples=20, trail_pts=40, tilt=0.62, dist=3.6, floor=-0.5):
+    """Keyframes for one full turn of the loss landscape with two descending balls, fitted into box.
+
+    Mesh keyframes are sampled n times per turn, balls and trails k times. Every keyframe keeps the
+    same path structure, so SMIL interpolates smoothly between them.
     """
     cb, sb = math.cos(tilt), math.sin(tilt)
     grid = [-1 + 2 * i / (lines - 1) for i in range(lines)]
     ts = [-1 + 2 * i / (samples - 1) for i in range(samples)]
 
-    def project(x, y, z, ca, sa):
+    def project(x, y, z, u):
+        a = 2 * math.pi * u + 0.5
+        ca, sa = math.cos(a), math.sin(a)
         x1, y1 = x * ca - y * sa, x * sa + y * ca
         d, zz = y1 * cb - z * sb, y1 * sb + z * cb
-        k = 1.0 / (d + dist)
-        return (k * x1, -k * zz), d
+        s = 1.0 / (d + dist)
+        return (s * x1, -s * zz), d
 
-    raw_mesh, raw_floor, raw_lab, raw_dot = [], [], {"k": [], "τ": []}, []
+    raw_mesh, raw_floor, raw_lab = [], [], {"θ₁": [], "θ₂": []}
     for f in range(n):
-        a = 2 * math.pi * f / n
-        ph = 2 * math.pi * ripples * f / n
-        ca, sa = math.cos(a), math.sin(a)
+        u = f / n
         polys = []
         for g in grid:
             for along_x in (True, False):
                 pts, depth = [], 0.0
-                for s in ts:
-                    x, y = (s, g) if along_x else (g, s)
-                    p, d = project(x, y, vol(x, y, ph), ca, sa)
+                for t in ts:
+                    x, y = (t, g) if along_x else (g, t)
+                    p, d = project(x, y, loss(x, y), u)
                     pts.append(p)
                     depth += d
                 polys.append((pts, depth / len(ts)))
         raw_mesh.append(polys)
-        raw_floor.append([project(x, y, floor, ca, sa)[0] for x, y in ((-1, -1), (1, -1), (1, 1), (-1, 1), (-1, -1))])
-        raw_lab["k"].append(project(0, -1.5, floor, ca, sa)[0])
-        raw_lab["τ"].append(project(1.5, 0, floor, ca, sa)[0])
-        yd = 0.92 * math.sin(2 * math.pi * 3 * f / n)
-        raw_dot.append(project(0, yd, vol(0, yd, ph), ca, sa)[0])
+        raw_floor.append([project(x, y, floor, u)[0] for x, y in ((-1, -1), (1, -1), (1, 1), (-1, 1), (-1, -1))])
+        raw_lab["θ₁"].append(project(0, -1.45, floor, u)[0])
+        raw_lab["θ₂"].append(project(1.45, 0, floor, u)[0])
+
+    paths = [descent(*start, lr=lr, beta=beta, steps=130) for _, start, lr, beta in RUNS]
+
+    def at(path, q):
+        i = min(int(q), len(path) - 2)
+        w = q - i
+        x = path[i][0] + w * (path[i + 1][0] - path[i][0])
+        y = path[i][1] + w * (path[i + 1][1] - path[i][1])
+        return x, y
+
+    raw_trails = []
+    for path in paths:
+        trail_keys, ball_keys, shadow_keys = [], [], []
+        for j in range(k):
+            u = j / k
+            prog = min(1.0, max(0.0, (u - DESCENT[0]) / (DESCENT[1] - DESCENT[0])))
+            q = prog * (len(path) - 1)
+            pts = []
+            for m in range(trail_pts):
+                x, y = at(path, q * m / (trail_pts - 1))
+                pts.append(project(x, y, loss(x, y) + 0.012, u)[0])
+            trail_keys.append(pts)
+            x, y = at(path, q)
+            ball_keys.append(project(x, y, loss(x, y) + 0.02, u)[0])
+            shadow_keys.append(project(x, y, floor, u)[0])
+        raw_trails.append((trail_keys, ball_keys, shadow_keys))
 
     allp = [p for fr in raw_mesh for pts, _ in fr for p in pts] + [p for fl in raw_floor for p in fl]
     xs, ys = [p[0] for p in allp], [p[1] for p in allp]
@@ -91,8 +142,12 @@ def surface_anim(box, n=48, lines=13, samples=20, tilt=0.6, dist=3.6, ripples=2,
     ox = x0 + ((x1 - x0) - s * (max(xs) - min(xs))) / 2 - s * min(xs)
     oy = y0 + ((y1 - y0) - s * (max(ys) - min(ys))) / 2 - s * min(ys)
 
-    def fmt(p):
-        return f"{ox + s * p[0]:.0f},{oy + s * p[1]:.0f}"
+    def xy(p, nd=0):
+        return round(ox + s * p[0], nd), round(oy + s * p[1], nd)
+
+    def fmt(p, nd=0):
+        a, b = xy(p, nd)
+        return f"{a:g},{b:g}"
 
     def loop(keys):
         return keys + keys[:1]
@@ -100,12 +155,22 @@ def surface_anim(box, n=48, lines=13, samples=20, tilt=0.6, dist=3.6, ripples=2,
     mesh = []
     for li in range(len(raw_mesh[0])):
         d_keys = ["M" + " ".join(fmt(p) for p in raw_mesh[f][li][0]) for f in range(n)]
-        op_keys = [f"{0.25 + 0.75 * min(1.0, max(0.0, (1.2 - raw_mesh[f][li][1]) / 2.4)):.2f}" for f in range(n)]
+        op_keys = [f"{0.22 + 0.78 * min(1.0, max(0.0, (1.2 - raw_mesh[f][li][1]) / 2.4)):.2f}" for f in range(n)]
         mesh.append((loop(d_keys), loop(op_keys)))
-    floor_keys = loop(["M" + " ".join(fmt(p) for p in fl) for fl in raw_floor])
-    labels = {k: loop([fmt(p) for p in v]) for k, v in raw_lab.items()}
-    dot = loop([fmt(p) for p in raw_dot])
-    return {"mesh": mesh, "floor": floor_keys, "labels": labels, "dot": dot, "box": box}
+    trails = []
+    for trail_keys, ball_keys, shadow_keys in raw_trails:
+        trails.append({
+            "d": loop(["M" + " ".join(fmt(p) for p in pts) for pts in trail_keys]),
+            "ball": loop([xy(p, 1) for p in ball_keys]),
+            "shadow": loop([xy(p, 1) for p in shadow_keys]),
+        })
+    return {
+        "mesh": mesh,
+        "floor": loop(["M" + " ".join(fmt(p) for p in fl) for fl in raw_floor]),
+        "labels": {name: loop([xy(p) for p in v]) for name, v in raw_lab.items()},
+        "trails": trails,
+        "box": box,
+    }
 
 
 def token():
@@ -167,36 +232,52 @@ text{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",m
     out.append(s)
 
     ix, y0, d0 = 300, 112, 1.1
-    # spinning implied-vol surface in the neofetch logo slot
-    sa = surface_anim((30, 86, 268, 300))
-    dur = "16s"
-    anim = f'dur="{dur}" repeatCount="indefinite" calcMode="linear"'
-    bx0, by0, bx1, by1 = sa["box"]
-    out.append(f'''<defs>
+    # loss landscape with two balls running gradient descent, in the neofetch logo slot
+    sc = scene_anim((30, 86, 268, 300))
+    anim = 'dur="20s" repeatCount="indefinite" calcMode="linear"'
+    fade = f'<animate attributeName="opacity" values="{FADE[0]}" keyTimes="{FADE[1]}" {anim}/>'
+    bx0, by0, bx1, by1 = sc["box"]
+
+    def move(keys, ax, ay, dy=0):
+        return (f'<animate attributeName="{ax}" values="{";".join(f"{k[0]:g}" for k in keys)}" {anim}/>'
+                f'<animate attributeName="{ay}" values="{";".join(f"{k[1] + dy:g}" for k in keys)}" {anim}/>')
+
+    out.append(f"""<defs>
 <linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="0" y1="{by0}" x2="0" y2="{by1}">
-<stop offset="0" stop-color="{p["glow"]}"/><stop offset="0.55" stop-color="{p["accent"]}"/><stop offset="1" stop-color="{p["accent"]}" stop-opacity="0.45"/>
+<stop offset="0" stop-color="{p["accent"]}" stop-opacity="0.95"/><stop offset="1" stop-color="{p["accent"]}" stop-opacity="0.35"/>
 </linearGradient>
-<filter id="gl" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="{p["blur"]}" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-</defs>''')
+<filter id="gl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="{p["blur"]}" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<radialGradient id="halo"><stop offset="0" stop-color="{p["glow"]}" stop-opacity="0.55"/><stop offset="1" stop-color="{p["glow"]}" stop-opacity="0"/></radialGradient>
+</defs>""")
     out.append('<g class="r" style="animation-delay:1.0s">')
-    fl = sa["floor"]
-    out.append(f'<path d="{fl[0]}" fill="none" stroke="{p["dim"]}" stroke-opacity="0.45" stroke-dasharray="2 4"><animate attributeName="d" values="{";".join(fl)}" {anim}/></path>')
-    for name, keys in sa["labels"].items():
-        xs_ = ";".join(k.split(",")[0] for k in keys)
-        ys_ = ";".join(str(int(k.split(",")[1]) + 4) for k in keys)
-        out.append(f'<text class="d" style="font-size:11px" text-anchor="middle" x="{keys[0].split(",")[0]}" y="{int(keys[0].split(",")[1]) + 4}">{esc(name)}'
-                   f'<animate attributeName="x" values="{xs_}" {anim}/><animate attributeName="y" values="{ys_}" {anim}/></text>')
-    out.append(f'<g fill="none" stroke="url(#hg)" stroke-width="1.1" stroke-linejoin="round" filter="url(#gl)">')
-    for d_keys, op_keys in sa["mesh"]:
+    fl = sc["floor"]
+    out.append(f'<path d="{fl[0]}" fill="none" stroke="{p["dim"]}" stroke-opacity="0.45" stroke-dasharray="2 4">'
+               f'<animate attributeName="d" values="{";".join(fl)}" {anim}/></path>')
+    for name, keys in sc["labels"].items():
+        out.append(f'<text class="d" style="font-size:11px" text-anchor="middle" x="{keys[0][0]:g}" y="{keys[0][1] + 4:g}">{esc(name)}'
+                   f'{move(keys, "x", "y", 4)}</text>')
+    for tr in sc["trails"]:
+        sh = tr["shadow"]
+        out.append(f'<ellipse rx="4" ry="1.6" fill="{p["dim"]}" fill-opacity="0.5" opacity="0" cx="{sh[0][0]:g}" cy="{sh[0][1]:g}">{move(sh, "cx", "cy")}{fade}</ellipse>')
+    out.append('<g fill="none" stroke="url(#hg)" stroke-width="1" stroke-linejoin="round">')
+    for d_keys, op_keys in sc["mesh"]:
         out.append(f'<path d="{d_keys[0]}" stroke-opacity="{op_keys[0]}"><animate attributeName="d" values="{";".join(d_keys)}" {anim}/>'
                    f'<animate attributeName="stroke-opacity" values="{";".join(op_keys)}" {anim}/></path>')
     out.append('</g>')
-    dk = sa["dot"]
-    cxs, cys = ";".join(k.split(",")[0] for k in dk), ";".join(k.split(",")[1] for k in dk)
-    out.append(f'<circle r="3" fill="{p["glow"]}" filter="url(#gl)" cx="{dk[0].split(",")[0]}" cy="{dk[0].split(",")[1]}">'
-               f'<animate attributeName="cx" values="{cxs}" {anim}/><animate attributeName="cy" values="{cys}" {anim}/></circle>')
+    for i, tr in enumerate(sc["trails"]):
+        color = p["glow"] if i == 0 else p["text"]
+        out.append(f'<path d="{tr["d"][0]}" fill="none" stroke="{color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" '
+                   f'opacity="0" filter="url(#gl)"><animate attributeName="d" values="{";".join(tr["d"])}" {anim}/>{fade}</path>')
+        b = tr["ball"]
+        out.append(f'<g opacity="0">{fade}'
+                   f'<circle r="9" fill="url(#halo)" cx="{b[0][0]:g}" cy="{b[0][1]:g}">{move(b, "cx", "cy")}</circle>'
+                   f'<circle r="3.4" fill="{color}" filter="url(#gl)" cx="{b[0][0]:g}" cy="{b[0][1]:g}">{move(b, "cx", "cy")}</circle></g>')
     out.append('</g>')
-    out.append(f'<text class="r d" style="font-size:11px;animation-delay:1.0s" x="36" y="{y0 + 44 + 7 * 26 - 26}">σ(k, τ)</text>')
+    cap_y = y0 + 44 + 6 * 26
+    out.append(f'<g class="r" style="animation-delay:1.0s;font-size:11px">'
+               f'<text class="d" x="36" y="{cap_y}">L(θ₁, θ₂)</text>'
+               f'<circle cx="112" cy="{cap_y - 4}" r="3" fill="{p["glow"]}"/><text class="d" x="120" y="{cap_y}">{RUNS[0][0]}</text>'
+               f'<circle cx="190" cy="{cap_y - 4}" r="3" fill="{p["text"]}"/><text class="d" x="198" y="{cap_y}">{RUNS[1][0]}</text></g>')
 
     # info panel
     head = f"aarav@{LOGIN}"
