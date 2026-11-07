@@ -24,9 +24,9 @@ FIELDS = [
 ]
 
 PALETTES = {
-    "dark": dict(bg="#0b0d10", border="#21262d", text="#e6edf3", dim="#7d8590", accent="#3fb950",
+    "dark": dict(bg="#0b0d10", border="#21262d", text="#e6edf3", dim="#7d8590", accent="#3fb950", glow="#7ee787", blur=1.6,
                  chrome="#30363d", off="#161b22", heat=["#161b22", "#0e4429", "#006d32", "#26a641", "#39d353"]),
-    "light": dict(bg="#fbfbfb", border="#d8dee4", text="#1f2328", dim="#6e7781", accent="#1a7f37",
+    "light": dict(bg="#fbfbfb", border="#d8dee4", text="#1f2328", dim="#6e7781", accent="#1a7f37", glow="#2da44e", blur=0.0001,
                   chrome="#d0d7de", off="#eaeef2", heat=["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]),
 }
 
@@ -34,23 +34,36 @@ LEVELS = {"NONE": 0, "FIRST_QUARTILE": 1, "SECOND_QUARTILE": 2, "THIRD_QUARTILE"
 CW = 8.4  # monospace advance at 14px, used only for sizing typed clips
 
 
-def vol(x, y):
-    """Toy implied-vol surface. x: log-moneyness in [-1, 1], y: maturity in [-1, 1], short to long."""
+def vol(x, y, phase=0.0):
+    """Toy implied-vol surface with a travelling ripple.
+
+    x: log-moneyness in [-1, 1]. y: maturity in [-1, 1], short to long. phase: ripple phase in radians.
+    """
     t = (y + 1) / 2
-    return 0.75 * x * x * math.exp(-1.4 * t) - 0.28 * x * math.exp(-1.0 * t) + 0.22 * t - 0.30
+    base = 0.75 * x * x * math.exp(-1.4 * t) - 0.28 * x * math.exp(-1.0 * t) + 0.22 * t - 0.30
+    return base + 0.055 * math.sin(2.4 * x + 3.4 * y - phase) * (0.6 + 0.4 * (1 - t))
 
 
-def surface_frames(box, n=48, lines=11, samples=18, tilt=0.62, dist=3.4, swing=0.75):
-    """Project the surface mesh while it rocks +-swing radians, and fit every frame into one shared box.
+def surface_anim(box, n=48, lines=13, samples=20, tilt=0.6, dist=3.6, ripples=2, floor=-0.62):
+    """Keyframes for one full turn of the surface, fitted into box = (x0, y0, x1, y1).
 
-    box: (x0, y0, x1, y1). Returns, per frame, three SVG path strings bucketed far, mid, near.
+    Every keyframe keeps the same path structure, so SMIL can interpolate between them smoothly.
+    Returns dict: mesh [(d_keys, opacity_keys)], floor d_keys, labels {name: xy_keys}, dot xy_keys.
     """
     cb, sb = math.cos(tilt), math.sin(tilt)
     grid = [-1 + 2 * i / (lines - 1) for i in range(lines)]
     ts = [-1 + 2 * i / (samples - 1) for i in range(samples)]
-    raw = []
+
+    def project(x, y, z, ca, sa):
+        x1, y1 = x * ca - y * sa, x * sa + y * ca
+        d, zz = y1 * cb - z * sb, y1 * sb + z * cb
+        k = 1.0 / (d + dist)
+        return (k * x1, -k * zz), d
+
+    raw_mesh, raw_floor, raw_lab, raw_dot = [], [], {"k": [], "τ": []}, []
     for f in range(n):
-        a = 0.55 + swing * math.sin(2 * math.pi * f / n)
+        a = 2 * math.pi * f / n
+        ph = 2 * math.pi * ripples * f / n
         ca, sa = math.cos(a), math.sin(a)
         polys = []
         for g in grid:
@@ -58,28 +71,39 @@ def surface_frames(box, n=48, lines=11, samples=18, tilt=0.62, dist=3.4, swing=0
                 pts, depth = [], 0.0
                 for s in ts:
                     x, y = (s, g) if along_x else (g, s)
-                    z = vol(x, y)
-                    x1, y1 = x * ca - y * sa, x * sa + y * ca
-                    d, zz = y1 * cb - z * sb, y1 * sb + z * cb
-                    k = 1.0 / (d + dist)
-                    pts.append((k * x1, -k * zz))
+                    p, d = project(x, y, vol(x, y, ph), ca, sa)
+                    pts.append(p)
                     depth += d
                 polys.append((pts, depth / len(ts)))
-        raw.append(polys)
-    xs = [p[0] for fr in raw for pts, _ in fr for p in pts]
-    ys = [p[1] for fr in raw for pts, _ in fr for p in pts]
+        raw_mesh.append(polys)
+        raw_floor.append([project(x, y, floor, ca, sa)[0] for x, y in ((-1, -1), (1, -1), (1, 1), (-1, 1), (-1, -1))])
+        raw_lab["k"].append(project(0, -1.5, floor, ca, sa)[0])
+        raw_lab["τ"].append(project(1.5, 0, floor, ca, sa)[0])
+        yd = 0.92 * math.sin(2 * math.pi * 3 * f / n)
+        raw_dot.append(project(0, yd, vol(0, yd, ph), ca, sa)[0])
+
+    allp = [p for fr in raw_mesh for pts, _ in fr for p in pts] + [p for fl in raw_floor for p in fl]
+    xs, ys = [p[0] for p in allp], [p[1] for p in allp]
     x0, y0, x1, y1 = box
     s = min((x1 - x0) / (max(xs) - min(xs)), (y1 - y0) / (max(ys) - min(ys)))
     ox = x0 + ((x1 - x0) - s * (max(xs) - min(xs))) / 2 - s * min(xs)
     oy = y0 + ((y1 - y0) - s * (max(ys) - min(ys))) / 2 - s * min(ys)
-    frames = []
-    for fr in raw:
-        buckets = ["", "", ""]
-        for pts, depth in fr:
-            b = 0 if depth > 0.45 else (1 if depth > -0.45 else 2)
-            buckets[b] += "M" + " ".join(f"{ox + s * px:.0f},{oy + s * py:.0f}" for px, py in pts)
-        frames.append(buckets)
-    return frames
+
+    def fmt(p):
+        return f"{ox + s * p[0]:.0f},{oy + s * p[1]:.0f}"
+
+    def loop(keys):
+        return keys + keys[:1]
+
+    mesh = []
+    for li in range(len(raw_mesh[0])):
+        d_keys = ["M" + " ".join(fmt(p) for p in raw_mesh[f][li][0]) for f in range(n)]
+        op_keys = [f"{0.25 + 0.75 * min(1.0, max(0.0, (1.2 - raw_mesh[f][li][1]) / 2.4)):.2f}" for f in range(n)]
+        mesh.append((loop(d_keys), loop(op_keys)))
+    floor_keys = loop(["M" + " ".join(fmt(p) for p in fl) for fl in raw_floor])
+    labels = {k: loop([fmt(p) for p in v]) for k, v in raw_lab.items()}
+    dot = loop([fmt(p) for p in raw_dot])
+    return {"mesh": mesh, "floor": floor_keys, "labels": labels, "dot": dot, "box": box}
 
 
 def token():
@@ -125,11 +149,9 @@ text{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",m
 .r{{opacity:0;animation:r .01s forwards}}
 @keyframes r{{to{{opacity:1}}}}
 @keyframes t{{to{{clip-path:inset(0 0 0 0)}}}}
-.fr{{visibility:hidden;animation:fr 7.2s steps(1) infinite}}
-@keyframes fr{{0%{{visibility:visible}}2.08%{{visibility:hidden}}}}
 .cur{{fill:{p["text"]};animation:k 1.1s steps(1) infinite}}
 @keyframes k{{50%{{opacity:0}}}}
-@media (prefers-reduced-motion:reduce){{*{{animation:none!important;opacity:1!important;clip-path:none!important}} .f0{{visibility:visible!important}}}}
+@media (prefers-reduced-motion:reduce){{*{{animation:none!important;opacity:1!important;clip-path:none!important}}}}
 </style>''')
     out.append(f'<rect x="0.5" y="0.5" width="{W-1}" height="{H-1}" rx="10" fill="{p["bg"]}" stroke="{p["border"]}"/>')
     for i in range(3):
@@ -144,16 +166,33 @@ text{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",m
 
     ix, y0, d0 = 300, 112, 1.1
     # spinning implied-vol surface in the neofetch logo slot
-    frames = surface_frames((36, 92, 262, 286))
-    n, period = len(frames), 7.2
-    step = period / n
-    out.append(f'<g class="r" style="animation-delay:1.0s" fill="none" stroke="{p["accent"]}" stroke-width="1" stroke-linejoin="round">')
-    for i, buckets in enumerate(frames):
-        out.append(f'<g class="fr{" f0" if i == 0 else ""}" style="animation-delay:{i * step - period:.2f}s">')
-        for d, op in zip(buckets, (0.32, 0.62, 1)):
-            if d:
-                out.append(f'<path d="{d}" stroke-opacity="{op}"/>')
-        out.append('</g>')
+    sa = surface_anim((30, 86, 268, 300))
+    dur = "16s"
+    anim = f'dur="{dur}" repeatCount="indefinite" calcMode="linear"'
+    bx0, by0, bx1, by1 = sa["box"]
+    out.append(f'''<defs>
+<linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="0" y1="{by0}" x2="0" y2="{by1}">
+<stop offset="0" stop-color="{p["glow"]}"/><stop offset="0.55" stop-color="{p["accent"]}"/><stop offset="1" stop-color="{p["accent"]}" stop-opacity="0.45"/>
+</linearGradient>
+<filter id="gl" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="{p["blur"]}" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>''')
+    out.append('<g class="r" style="animation-delay:1.0s">')
+    fl = sa["floor"]
+    out.append(f'<path d="{fl[0]}" fill="none" stroke="{p["dim"]}" stroke-opacity="0.45" stroke-dasharray="2 4"><animate attributeName="d" values="{";".join(fl)}" {anim}/></path>')
+    for name, keys in sa["labels"].items():
+        xs_ = ";".join(k.split(",")[0] for k in keys)
+        ys_ = ";".join(str(int(k.split(",")[1]) + 4) for k in keys)
+        out.append(f'<text class="d" style="font-size:11px" text-anchor="middle" x="{keys[0].split(",")[0]}" y="{int(keys[0].split(",")[1]) + 4}">{esc(name)}'
+                   f'<animate attributeName="x" values="{xs_}" {anim}/><animate attributeName="y" values="{ys_}" {anim}/></text>')
+    out.append(f'<g fill="none" stroke="url(#hg)" stroke-width="1.1" stroke-linejoin="round" filter="url(#gl)">')
+    for d_keys, op_keys in sa["mesh"]:
+        out.append(f'<path d="{d_keys[0]}" stroke-opacity="{op_keys[0]}"><animate attributeName="d" values="{";".join(d_keys)}" {anim}/>'
+                   f'<animate attributeName="stroke-opacity" values="{";".join(op_keys)}" {anim}/></path>')
+    out.append('</g>')
+    dk = sa["dot"]
+    cxs, cys = ";".join(k.split(",")[0] for k in dk), ";".join(k.split(",")[1] for k in dk)
+    out.append(f'<circle r="3" fill="{p["glow"]}" filter="url(#gl)" cx="{dk[0].split(",")[0]}" cy="{dk[0].split(",")[1]}">'
+               f'<animate attributeName="cx" values="{cxs}" {anim}/><animate attributeName="cy" values="{cys}" {anim}/></circle>')
     out.append('</g>')
     out.append(f'<text class="r d" style="font-size:11px;animation-delay:1.0s" x="36" y="{y0 + 44 + 7 * 26 - 26}">σ(k, τ)</text>')
 
