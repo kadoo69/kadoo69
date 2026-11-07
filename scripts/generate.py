@@ -6,6 +6,7 @@ Usage: python3 scripts/generate.py [login]
 import datetime as dt
 import html
 import json
+import math
 import os
 import subprocess
 import sys
@@ -29,12 +30,56 @@ PALETTES = {
                   chrome="#d0d7de", off="#eaeef2", heat=["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]),
 }
 
-GLYPH = {
-    "A": ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
-    "M": ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
-}
 LEVELS = {"NONE": 0, "FIRST_QUARTILE": 1, "SECOND_QUARTILE": 2, "THIRD_QUARTILE": 3, "FOURTH_QUARTILE": 4}
 CW = 8.4  # monospace advance at 14px, used only for sizing typed clips
+
+
+def vol(x, y):
+    """Toy implied-vol surface. x: log-moneyness in [-1, 1], y: maturity in [-1, 1], short to long."""
+    t = (y + 1) / 2
+    return 0.75 * x * x * math.exp(-1.4 * t) - 0.28 * x * math.exp(-1.0 * t) + 0.22 * t - 0.30
+
+
+def surface_frames(box, n=48, lines=11, samples=18, tilt=0.62, dist=3.4, swing=0.75):
+    """Project the surface mesh while it rocks +-swing radians, and fit every frame into one shared box.
+
+    box: (x0, y0, x1, y1). Returns, per frame, three SVG path strings bucketed far, mid, near.
+    """
+    cb, sb = math.cos(tilt), math.sin(tilt)
+    grid = [-1 + 2 * i / (lines - 1) for i in range(lines)]
+    ts = [-1 + 2 * i / (samples - 1) for i in range(samples)]
+    raw = []
+    for f in range(n):
+        a = 0.55 + swing * math.sin(2 * math.pi * f / n)
+        ca, sa = math.cos(a), math.sin(a)
+        polys = []
+        for g in grid:
+            for along_x in (True, False):
+                pts, depth = [], 0.0
+                for s in ts:
+                    x, y = (s, g) if along_x else (g, s)
+                    z = vol(x, y)
+                    x1, y1 = x * ca - y * sa, x * sa + y * ca
+                    d, zz = y1 * cb - z * sb, y1 * sb + z * cb
+                    k = 1.0 / (d + dist)
+                    pts.append((k * x1, -k * zz))
+                    depth += d
+                polys.append((pts, depth / len(ts)))
+        raw.append(polys)
+    xs = [p[0] for fr in raw for pts, _ in fr for p in pts]
+    ys = [p[1] for fr in raw for pts, _ in fr for p in pts]
+    x0, y0, x1, y1 = box
+    s = min((x1 - x0) / (max(xs) - min(xs)), (y1 - y0) / (max(ys) - min(ys)))
+    ox = x0 + ((x1 - x0) - s * (max(xs) - min(xs))) / 2 - s * min(xs)
+    oy = y0 + ((y1 - y0) - s * (max(ys) - min(ys))) / 2 - s * min(ys)
+    frames = []
+    for fr in raw:
+        buckets = ["", "", ""]
+        for pts, depth in fr:
+            b = 0 if depth > 0.45 else (1 if depth > -0.45 else 2)
+            buckets[b] += "M" + " ".join(f"{ox + s * px:.0f},{oy + s * py:.0f}" for px, py in pts)
+        frames.append(buckets)
+    return frames
 
 
 def token():
@@ -80,9 +125,11 @@ text{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",m
 .r{{opacity:0;animation:r .01s forwards}}
 @keyframes r{{to{{opacity:1}}}}
 @keyframes t{{to{{clip-path:inset(0 0 0 0)}}}}
+.fr{{visibility:hidden;animation:fr 7.2s steps(1) infinite}}
+@keyframes fr{{0%{{visibility:visible}}2.08%{{visibility:hidden}}}}
 .cur{{fill:{p["text"]};animation:k 1.1s steps(1) infinite}}
 @keyframes k{{50%{{opacity:0}}}}
-@media (prefers-reduced-motion:reduce){{*{{animation:none!important;opacity:1!important;clip-path:none!important}}}}
+@media (prefers-reduced-motion:reduce){{*{{animation:none!important;opacity:1!important;clip-path:none!important}} .f0{{visibility:visible!important}}}}
 </style>''')
     out.append(f'<rect x="0.5" y="0.5" width="{W-1}" height="{H-1}" rx="10" fill="{p["bg"]}" stroke="{p["border"]}"/>')
     for i in range(3):
@@ -95,26 +142,28 @@ text{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",m
     s, t = typed(56, 76, "neofetch", 0.3)
     out.append(s)
 
-    # monogram dot matrix
-    pitch, cell, mx, my = 17, 13, 36, 104
-    col = 0
-    for g in "AM":
-        for r, row in enumerate(GLYPH[g]):
-            for c, ch in enumerate(row):
-                x, y = mx + (col + c) * pitch, my + r * pitch
-                fill = p["accent"] if ch == "1" else p["off"]
-                d = 1.0 + (col + c) * 0.05
-                out.append(f'<rect class="r" style="animation-delay:{d:.2f}s" x="{x}" y="{y}" width="{cell}" height="{cell}" rx="3" fill="{fill}"/>')
-        col += 6
+    ix, y0, d0 = 300, 112, 1.1
+    # spinning implied-vol surface in the neofetch logo slot
+    frames = surface_frames((36, 92, 262, 286))
+    n, period = len(frames), 7.2
+    step = period / n
+    out.append(f'<g class="r" style="animation-delay:1.0s" fill="none" stroke="{p["accent"]}" stroke-width="1" stroke-linejoin="round">')
+    for i, buckets in enumerate(frames):
+        out.append(f'<g class="fr{" f0" if i == 0 else ""}" style="animation-delay:{i * step - period:.2f}s">')
+        for d, op in zip(buckets, (0.32, 0.62, 1)):
+            if d:
+                out.append(f'<path d="{d}" stroke-opacity="{op}"/>')
+        out.append('</g>')
+    out.append('</g>')
+    out.append(f'<text class="r d" style="font-size:11px;animation-delay:1.0s" x="36" y="{y0 + 44 + 7 * 26 - 26}">σ(k, τ)</text>')
 
     # info panel
-    ix, y0, step, d0 = 290, 112, 26, 1.1
-    head = f"{LOGIN.split('69')[0] and 'aarav'}@{LOGIN}"
+    head = f"aarav@{LOGIN}"
     out.append(f'<text class="r a b" style="font-size:14px;animation-delay:{d0:.2f}s" x="{ix}" y="{y0}">{esc(head)}</text>')
     out.append(f'<text class="r d" style="font-size:14px;animation-delay:{d0+0.1:.2f}s" x="{ix}" y="{y0+18}">{"-"*len(head)}</text>')
     rows = FIELDS + [("since", since), ("activity", f"{total} contributions / 12 months")]
     for i, (k, v) in enumerate(rows):
-        y = y0 + 44 + i * step
+        y = y0 + 44 + i * 26
         d = d0 + 0.25 + i * 0.18
         out.append(f'<text class="r" style="font-size:14px;animation-delay:{d:.2f}s" y="{y}">'
                    f'<tspan x="{ix}" class="a">{esc(k)}</tspan><tspan x="{ix+11*CW:.1f}">{esc(v)}</tspan></text>')
