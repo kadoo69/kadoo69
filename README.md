@@ -1,6 +1,6 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/card-dark.svg?v=0e282b3740">
-  <img alt="Terminal card: Aarav Mahajan. Finance, technology, mathematics. Python, C++, TypeScript." src="assets/card-light.svg?v=0e282b3740" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/card-dark.svg?v=c2dafb0533">
+  <img alt="Terminal card: Aarav Mahajan. Finance, technology, mathematics. Python, C++, TypeScript." src="assets/card-light.svg?v=c2dafb0533" width="100%">
 </picture>
 
 **Writing**
