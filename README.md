@@ -1,4 +1,4 @@
-<a href="https://caelioncapital.in/"><img src="assets/banner.svg?v=3d96d0c498" width="100%" alt="Aarav Mahajan, co-founder of Caelion Capital. Systems for markets, built from first principles."/></a>
+<a href="https://caelioncapital.in/"><img src="assets/banner.svg?v=81fb61b31c" width="100%" alt="Aarav Mahajan, co-founder of Caelion Capital. The market, from a different altitude."/></a>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/card-dark.svg?v=c17f04bef9">

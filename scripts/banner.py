@@ -15,7 +15,7 @@ X0 = 92  # left text column
 
 NAME = "AARAV MAHAJAN"
 KICKER = "CO-FOUNDER  ·  CAELION CAPITAL"
-HEAD = ("Systems for markets,", "built from first principles.")
+HEAD = ("The market, from", "a different altitude.")
 SUB = "Quant research and market infrastructure for Indian equities, in Python, C++ and TypeScript."
 STAGES = ["TICK", "BOOK", "SIGNAL", "RISK", "FILL"]
 RULES = "POINT-IN-TIME DATA  ·  DETERMINISTIC PATHS  ·  REPORT THE NULL"
