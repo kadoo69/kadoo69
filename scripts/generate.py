@@ -25,12 +25,11 @@ FIELDS = [
     ("writing", "the other side of the pull request"),
 ]
 
-PALETTES = {
-    "dark": dict(bg="#0b0d10", border="#21262d", text="#e6edf3", dim="#7d8590", accent="#3fb950", glow="#7ee787", blur=1.6,
-                 chrome="#30363d", off="#161b22", heat=["#161b22", "#0e4429", "#006d32", "#26a641", "#39d353"]),
-    "light": dict(bg="#fbfbfb", border="#d8dee4", text="#1f2328", dim="#6e7781", accent="#1a7f37", glow="#2da44e", blur=0.6,
-                  chrome="#d0d7de", off="#eaeef2", heat=["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]),
-}
+# Matches assets/banner.svg: near-black glass, warm-white text, amethyst accent, violet activity ramp.
+# The banner is dark in both colour schemes, so the card is too; the light entry keeps the README <picture> working.
+CAELION = dict(bg="#050507", border="#1a1920", text="#f4f4f6", dim="#8c8c95", accent="#b79cf5", glow="#d9ccff", blur=1.6,
+               chrome="#24222b", off="#121117", heat=["#121117", "#2b2150", "#4a3590", "#7a5cd6", "#c4b0ff"])
+PALETTES = {"dark": CAELION, "light": CAELION}
 
 LEVELS = {"NONE": 0, "FIRST_QUARTILE": 1, "SECOND_QUARTILE": 2, "THIRD_QUARTILE": 3, "FOURTH_QUARTILE": 4}
 CW = 8.4  # monospace advance at 14px, used only for sizing typed clips
@@ -220,7 +219,9 @@ text{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",m
 @keyframes k{{50%{{opacity:0}}}}
 @media (prefers-reduced-motion:reduce){{*{{animation:none!important;opacity:1!important;clip-path:none!important}}}}
 </style>''')
-    out.append(f'<rect x="0.5" y="0.5" width="{W-1}" height="{H-1}" rx="10" fill="{p["bg"]}" stroke="{p["border"]}"/>')
+    out.append(f'<rect x="0.5" y="0.5" width="{W-1}" height="{H-1}" rx="18" fill="{p["bg"]}" stroke="{p["border"]}"/>')
+    # Faint column grid, as on the banner.
+    out.append('<g stroke="#ffffff" stroke-opacity="0.022">' + "".join(f'<line x1="{x}" y1="41" x2="{x}" y2="{H-14}"/>' for x in range(28, W, 44)) + '</g>')
     for i in range(3):
         out.append(f'<circle cx="{24+i*20}" cy="20" r="6" fill="{p["chrome"]}"/>')
     out.append(f'<text x="{W/2}" y="24" text-anchor="middle" class="d" style="font-size:12px">{LOGIN} : zsh</text>')
