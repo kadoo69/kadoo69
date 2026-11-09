@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="880" height="584" viewBox="0 0 880 584" role="img" aria-label="Terminal card for Aarav Mahajan: finance, technology, mathematics. 926 contributions in the last year.">
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="584" viewBox="0 0 880 584" role="img" aria-label="Terminal card for Aarav Mahajan: finance, technology, mathematics. 943 contributions in the last year.">
 <style>
 text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;fill:#f4f4f6}
 .d{fill:#8c8c95} .a{fill:#b79cf5} .b{font-weight:700}
@@ -73,7 +73,7 @@ text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",mo
 <text class="r" style="font-size:14px;animation-delay:1.89s" y="234"><tspan x="300" class="a">stack</tspan><tspan x="392.4">pytorch, numpy, pandas, next.js</tspan></text>
 <text class="r" style="font-size:14px;animation-delay:2.07s" y="260"><tspan x="300" class="a">writing</tspan><tspan x="392.4">the other side of the pull request</tspan></text>
 <text class="r" style="font-size:14px;animation-delay:2.25s" y="286"><tspan x="300" class="a">since</tspan><tspan x="392.4">2022</tspan></text>
-<text class="r" style="font-size:14px;animation-delay:2.43s" y="312"><tspan x="300" class="a">activity</tspan><tspan x="392.4">926 contributions / 12 months</tspan></text>
+<text class="r" style="font-size:14px;animation-delay:2.43s" y="312"><tspan x="300" class="a">activity</tspan><tspan x="392.4">943 contributions / 12 months</tspan></text>
 <text class="r a b" style="font-size:14px;animation-delay:3.1s" x="36" y="352">$</text>
 <text x="56" y="352" class="" style="font-size:14px;clip-path:inset(0 100% 0 0);animation:t 1.21s steps(27,end) 3.20s forwards">./activity --last-12-months</text>
 <text class="r d" style="font-size:10px;animation-delay:4.20s" x="36" y="384">nov</text>
