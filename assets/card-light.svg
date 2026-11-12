@@ -456,6 +456,7 @@ text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",mo
 <rect class="r" style="animation-delay:5.50s" x="816" y="409" width="11" height="11" rx="2.5" fill="#2b2150"/>
 <rect class="r" style="animation-delay:5.50s" x="816" y="424" width="11" height="11" rx="2.5" fill="#2b2150"/>
 <rect class="r" style="animation-delay:5.50s" x="816" y="439" width="11" height="11" rx="2.5" fill="#2b2150"/>
+<rect class="r" style="animation-delay:5.50s" x="816" y="454" width="11" height="11" rx="2.5" fill="#121117"/>
 <text class="r d" style="font-size:11px;animation-delay:5.6s" x="689" y="521">less</text>
 <rect class="r" style="animation-delay:5.6s" x="723" y="511" width="11" height="11" rx="2.5" fill="#121117"/>
 <rect class="r" style="animation-delay:5.6s" x="739" y="511" width="11" height="11" rx="2.5" fill="#2b2150"/>
