@@ -1,8 +1,8 @@
 <a href="https://caelioncapital.in/"><img src="assets/banner.svg?v=81fb61b31c" width="100%" alt="Aarav Mahajan, co-founder of Caelion Capital. The market, from a different altitude."/></a>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/card-dark.svg?v=effc195aa5">
-  <img alt="Terminal card: Aarav Mahajan. Finance, technology, mathematics. Python, C++, TypeScript." src="assets/card-light.svg?v=effc195aa5" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/card-dark.svg?v=48274a05be">
+  <img alt="Terminal card: Aarav Mahajan. Finance, technology, mathematics. Python, C++, TypeScript." src="assets/card-light.svg?v=48274a05be" width="100%">
 </picture>
 
 **Writing**
